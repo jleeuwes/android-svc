@@ -20,6 +20,7 @@ export g_nc=$(printf '%s\n' '\033[0m' | sed -e 's/[\/&]/\\&/g') # no color
 Init () {
     g_repoUrl="${1-}"
     export g_aidlFileCache="${g_fileCache}/$(GetRomName)"
+    export g_aidlGitCache="${g_fileCache}/$(GetRomName)".git
     if ! [ -n "$g_repoUrl" ]; then
         if [ -f "${g_fileCache}/REPO_URL" ]; then
             export g_repoUrl="$(cat "${g_fileCache}/REPO_URL")"
@@ -300,6 +301,12 @@ GetSourceRepoUrl () {
         l_lineageVersion="$(AndroidShell 'getprop ro.lineage.build.version')"
         #l_branches="$(git ls-remote https://github.com/LineageOS/android_frameworks_base.git | cut -d'/' -f3 | cut -d'^' -f1 | grep lineage-)"
         l_repoUrl="https://raw.githubusercontent.com/LineageOS/android_frameworks_base/lineage-${l_lineageVersion}"
+    elif [ "$l_romType" = eos ]; then
+        l_eosVersion=$(AndroidShell 'getprop ro.lineage.version' | cut -d- -f1-2)
+        l_manifestUrl="https://gitlab.e.foundation/e/os/releases/-/raw/v$l_eosVersion/default.xml"
+        l_revision=$(curl -s "$l_manifestUrl" | grep -E '<project\s+name="e/os/android_frameworks_base"' |
+            grep -Eo 'revision="[^"]+"' | sed -e 's/revision=//' | grep -Eo '[0-9a-f]+')
+        l_repoUrl="https://gitlab.e.foundation/e/os/android_frameworks_base/-/raw/$l_revision"
     elif [ "$l_romType" = stock ]; then
         l_androidVersion="$(GetAndroidVersion)"
         l_tag="$(git ls-remote --tags --sort="v:refname" https://android.googlesource.com/platform/frameworks/base.git | cut -d'/' -f3 | cut -d'^' -f1 | grep android-${l_androidVersion} | tail -1)"
@@ -330,28 +337,40 @@ GetSourceFile () {
 ###
 # list all aidl files
 # GLOBALS:
-#  g_repoUrl filled by then Init method contains an url like https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/android-11.0.0_r35
+#  g_repoUrl filled by then Init method contains an url like
+#     https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/android-11.0.0_r35
+#  or
+#     https://gitlab.e.foundation/e/os/android_frameworks_base/-/raw/3974b9b5e727ca2347355d25ff7256c7c65cdabe
 # OUTPUTS:
 #  path to all aidl files in the current branch
 GetServiceAidlFileNames () {
-    [ -n "$g_repoUrl" ] || Exit 1 "Android source code repository URL was empty in GetServiceAidlFileNames (Did you call Init first?)"
-    # l_githubUser should contains a gitHub user
-    l_githubUser="$(echo "$g_repoUrl" | cut -d'/' -f 4)"
-    # l_githubProject should contains the gitHub project name
-    l_githubProject="$(echo "$g_repoUrl" | cut -d'/' -f 5)"
-    # l_branch should contains android-XX.Y.Z-revision
-    l_branch="$(echo "$g_repoUrl" | cut -d'/' -f 6)"
-    # build github api to list all files in a branch
-    l_recursiveFileTreeUrl="https://api.github.com/repos/${l_githubUser}/${l_githubProject}/git/trees/${l_branch}?recursive=1"
-
-
     if [ -d "$g_aidlFileCache" ] && [ "$(ls -A "$g_aidlFileCache")" ]; then
         find "$g_aidlFileCache" -type f -printf "%P\n" | sort -u
         return
     fi
 
-    # Extract all .aidl file paths from the recursive file tree:
-    curl -s "${l_recursiveFileTreeUrl}" | jq -r '.tree|map(.path|select(test("\\.aidl")))[]' | sort -u
+    [ -n "$g_repoUrl" ] || Exit 1 "Android source code repository URL was empty in GetServiceAidlFileNames (Did you call Init first?)"
+    if [[ $g_repoUrl == https://github.com/* ]]; then
+        # l_githubUser should contains a gitHub user
+        l_githubUser="$(echo "$g_repoUrl" | cut -d'/' -f 4)"
+        # l_githubProject should contains the gitHub project name
+        l_githubProject="$(echo "$g_repoUrl" | cut -d'/' -f 5)"
+        # l_branch should contains android-XX.Y.Z-revision
+        l_branch="$(echo "$g_repoUrl" | cut -d'/' -f 6)"
+        # build github api to list all files in a branch
+        l_recursiveFileTreeUrl="https://api.github.com/repos/${l_githubUser}/${l_githubProject}/git/trees/${l_branch}?recursive=1"
+        # Extract all .aidl file paths from the recursive file tree:
+        curl -s "${l_recursiveFileTreeUrl}" | jq -r '.tree|map(.path|select(test("\\.aidl")))[]' | sort -u
+    elif [[ $g_repoUrl == https://gitlab.* ]]; then
+        if [ ! -e "$g_aidlGitCache" ]; then
+            l_gitUrl=${g_repoUrl%%/-*}.git
+            l_branch=${g_repoUrl##*/}
+            git clone "$l_gitUrl" --depth 1 --revision "$l_branch" --filter blob:none --sparse "$g_aidlGitCache"
+        fi
+        git -C "$g_aidlGitCache" ls-tree --name-only -r HEAD | egrep '\.aidl$' | sort -u
+    else
+        Exit 1 "Unable to list aidl files"
+    fi
 }
 
 ###
