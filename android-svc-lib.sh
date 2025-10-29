@@ -541,4 +541,4 @@ Exit () {
     fi
 }
 
-AssertExecutablesAreAvailable 'bash' 'git' 'wget' 'tr' 'sed' 'cut' 'grep' 'head' 'tail' 'printf' 'cat' 'sort' 'rev' 'xxd' 'jq'
+AssertExecutablesAreAvailable bash git wget curl tr sed cut grep head tail printf cat sort rev xxd jq
