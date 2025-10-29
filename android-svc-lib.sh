@@ -265,10 +265,29 @@ GetAndroidVersion () {
     echo "${l_androidVersion}"
 }
 
-GetRomName () {
+GetRomType () {
+    l_elegal="$(AndroidShell 'getprop ro.elegal.url')"
+    if [ "$l_elegal" != "" ]; then
+        echo eos
+        return
+    fi
     l_lineageVersion="$(AndroidShell 'getprop ro.lineage.build.version')"
     if [ "$l_lineageVersion" != "" ]; then
+        echo lineage
+        return
+    fi
+    echo stock
+}
+
+
+GetRomName () {
+    l_romType=$(GetRomType)
+    if [ "$l_romType" = lineage ]; then
+        l_lineageVersion="$(AndroidShell 'getprop ro.lineage.build.version')"
         echo "lineage/${l_lineageVersion}"
+    elif [ "$l_romType" = eos ]; then
+        l_eosVersion=$(AndroidShell 'getprop ro.lineage.version' | cut -d- -f1-2)
+        echo "eos/${l_eosVersion}"
     else
         l_androidVersion="$(GetAndroidVersion)"
         echo "stock/${l_androidVersion}"
@@ -276,12 +295,13 @@ GetRomName () {
 }
 
 GetSourceRepoUrl () {
-    l_androidVersion="$(GetAndroidVersion)"
-    l_lineageVersion="$(AndroidShell 'getprop ro.lineage.build.version')"
-    if [ "${l_lineageVersion}" != "" ]; then
+    l_romType=$(GetRomType)
+    if [ "$l_romType" = lineage ]; then
+        l_lineageVersion="$(AndroidShell 'getprop ro.lineage.build.version')"
         #l_branches="$(git ls-remote https://github.com/LineageOS/android_frameworks_base.git | cut -d'/' -f3 | cut -d'^' -f1 | grep lineage-)"
         l_repoUrl="https://raw.githubusercontent.com/LineageOS/android_frameworks_base/lineage-${l_lineageVersion}"
-    elif [ "${l_androidVersion}" != "" ]; then
+    elif [ "$l_romType" = stock ]; then
+        l_androidVersion="$(GetAndroidVersion)"
         l_tag="$(git ls-remote --tags --sort="v:refname" https://android.googlesource.com/platform/frameworks/base.git | cut -d'/' -f3 | cut -d'^' -f1 | grep android-${l_androidVersion} | tail -1)"
         l_repoUrl="https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/${l_tag}"
     fi
