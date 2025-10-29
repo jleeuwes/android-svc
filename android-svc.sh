@@ -1,5 +1,8 @@
 #!/bin/bash
 
+set -e
+set -o pipefail
+
 #ANDROID_SVC_LIB_BEGIN
 if [ -f "${PREFIX}/lib/android-svc-lib.sh" ]; then
     source "${PREFIX}/lib/android-svc-lib.sh"
